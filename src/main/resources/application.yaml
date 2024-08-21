@@ -1,0 +1,10 @@
+server:
+  port: 9522
+
+mail:
+  host: ${MAIL_HOST}
+  port: ${MAIL_PORT}
+  protocol: ${MAIL_PROTOCOL}
+  smtp:
+    starttls:
+      enable: ${MAIL_STARTTLS}
