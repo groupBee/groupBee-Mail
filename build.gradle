@@ -42,6 +42,15 @@ dependencies {
 
     // Jakarta Mail 라이브러리 (Angus Jakarta Mail로 대체)
     implementation 'org.eclipse.angus:jakarta.mail:2.0.3'
+
+    // mini.io client
+    implementation 'io.minio:minio:8.5.10'
+
+    // Swagger와 Springfox 관련 종속성
+    implementation 'io.springfox:springfox-boot-starter:3.0.0'
+
+    // Swagger UI
+    implementation 'io.springfox:springfox-swagger-ui:3.0.0'
 }
 
 
