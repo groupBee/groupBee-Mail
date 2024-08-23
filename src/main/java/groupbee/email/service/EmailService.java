@@ -34,6 +34,9 @@ public class EmailService {
     @Value("${mail.imap.protocol}")
     private String imapProtocol;
 
+    @Value("${mail.imap.starttls.enable}")
+    private boolean imapStarttlsEnable;
+
     public void sendEmail(String username, String password, String to, String subject, String body) {
         JavaMailSenderImpl mailSender = new JavaMailSenderImpl();
         mailSender.setHost(mailHost);
@@ -47,6 +50,10 @@ public class EmailService {
         props.put("mail.smtp.auth", "true");
         props.put("mail.smtp.starttls.enable", String.valueOf(starttlsEnable));  // STARTTLS 활성화
         props.put("mail.debug", "true");
+
+        // SSL 검증 비활성화
+        props.put("mail.smtp.ssl.trust", "*");
+        props.put("mail.smtp.ssl.checkserveridentity", "false");
 
         SimpleMailMessage message = new SimpleMailMessage();
         message.setFrom(username);
@@ -64,11 +71,17 @@ public class EmailService {
         props.put("mail.store.protocol", imapProtocol);
         props.put("mail.imap.host", imapHost);
         props.put("mail.imap.port", String.valueOf(imapPort));
+        props.put("mail.imap.starttls.enable", String.valueOf(imapStarttlsEnable));  // STARTTLS 활성화
         props.put("mail.imap.ssl.enable", "false");
-        props.put("mail.debug", "false");
+        props.put("mail.debug", "true");
+
+        // SSL 검증 비활성화
+        props.put("mail.imap.ssl.trust", "*");
+        props.put("mail.imap.ssl.checkserveridentity", "false");
 
         Session session = Session.getInstance(props);
         Store store = session.getStore(imapProtocol);
+        System.out.println(username);
         store.connect(imapHost, username, password);
 
         Folder inbox = store.getFolder("INBOX");

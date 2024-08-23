@@ -38,6 +38,7 @@ public class EmailController {
 
     @PostMapping("/check")
     public ResponseEntity<List<Map<String, String>>> checkEmail(@RequestBody EmailRequest request) {
+        System.out.println(request.getUsername()+request.getPassword());
         try {
             List<Map<String, String>> emails = emailService.checkEmail(request.getUsername(), request.getPassword());
             return ResponseEntity.ok(emails);
