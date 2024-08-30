@@ -1,19 +1,23 @@
 package groupbee.email.service;
 
+import groupbee.email.service.feign.EmployeeFeignClient;
 import jakarta.mail.*;
 import jakarta.mail.internet.AddressException;
 import jakarta.mail.internet.InternetAddress;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.stereotype.Service;
-
 import java.text.SimpleDateFormat;
 import java.util.*;
 
 @Service
+@RequiredArgsConstructor
 public class EmailService {
+
+    private final EmployeeFeignClient employeeFeignClient;
 
     @Value("${mail.host}")
     private String mailHost;
@@ -39,7 +43,11 @@ public class EmailService {
     @Value("${mail.imap.starttls.enable}")
     private boolean imapStarttlsEnable;
 
-    public void sendEmail(String username, String password, List<String> to, List<String> cc, String subject, String body) throws SendFailedException {
+    public void sendEmail(List<String> to, List<String> cc, String subject, String body) throws SendFailedException {
+        Map<String, Object> userInfo = employeeFeignClient.getUserInfo();
+        String username = userInfo.get("email").toString();
+        String password = userInfo.get("password").toString();
+
         // 수신자 주소 유효성 검사
         for (String recipient : to) {
             if (!isValidEmailAddress(recipient)) {
@@ -103,9 +111,11 @@ public class EmailService {
         return result;
     }
 
-    public List<Map<String, String>> checkEmail(String username, String password) throws Exception {
+    public List<Map<String, String>> checkEmail() throws Exception {
         List<Map<String, String>> emailList = new ArrayList<>();
-
+        Map<String, Object> userInfo = employeeFeignClient.getUserInfo();
+        String username = userInfo.get("email").toString();
+        String password = userInfo.get("password").toString();
         Properties props = new Properties();
         props.put("mail.store.protocol", imapProtocol);
         props.put("mail.imap.host", imapHost);

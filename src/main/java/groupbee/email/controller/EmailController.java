@@ -3,6 +3,7 @@ package groupbee.email.controller;
 import groupbee.email.data.EmailRequest;
 import groupbee.email.service.EmailService;
 import jakarta.mail.SendFailedException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,18 +16,16 @@ import java.util.List;
 import java.util.Map;
 
 @RestController
+@RequiredArgsConstructor
 @RequestMapping("/api/email")
 public class EmailController {
 
-    @Autowired
-    private EmailService emailService;
+    private final EmailService emailService;
 
     @PostMapping("/send")
     public Map<String, String> sendEmail(@RequestBody EmailRequest request) {
         try {
             emailService.sendEmail(
-                    request.getUsername(),
-                    request.getPassword(),
                     request.getTo(),
                     request.getCc(),
                     request.getSubject(),
@@ -55,11 +54,10 @@ public class EmailController {
     }
 
 
-    @PostMapping("/check")
-    public ResponseEntity<List<Map<String, String>>> checkEmail(@RequestBody EmailRequest request) {
-        System.out.println(request.getUsername()+request.getPassword());
+    @GetMapping("/check")
+    public ResponseEntity<List<Map<String, String>>> checkEmail() {
         try {
-            List<Map<String, String>> emails = emailService.checkEmail(request.getUsername(), request.getPassword());
+            List<Map<String, String>> emails = emailService.checkEmail();
             return ResponseEntity.ok(emails);
         } catch (Exception e) {
             e.printStackTrace();
