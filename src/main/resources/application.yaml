@@ -1,6 +1,9 @@
 server:
   port: 9522
 
+spring:
+  main:
+    allow-bean-definition-overriding: true
 #mail:
 #  host: ${MAIL_HOST}
 #  port: ${MAIL_PORT}

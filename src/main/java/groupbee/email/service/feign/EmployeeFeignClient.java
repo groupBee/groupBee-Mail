@@ -9,6 +9,6 @@ import java.util.Map;
 @FeignClient(name = "employee" , url = "${FEIGN_BASE_URL}" , configuration = FeignConfig.class)
 public interface EmployeeFeignClient {
 
-    @GetMapping(value = "/api/employee/info")
+    @GetMapping(value = "/api/employee/auth/email")
     public Map<String, Object> getUserInfo();
 }
