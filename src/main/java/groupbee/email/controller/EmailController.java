@@ -34,24 +34,13 @@ public class EmailController {
             response.put("message", "Email sent successfully!");
             return response;
         } catch (SendFailedException e) {
-            // SendFailedException 예외를 특정하게 처리
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid email address: " + e.getMessage());
         } catch (RuntimeException e) {
-            // 나머지 모든 런타임 예외를 처리
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
-            // 나머지 모든 예외를 처리
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "An error occurred while sending email.");
         }
     }
-
-    @ExceptionHandler(ResponseStatusException.class)
-    public ResponseEntity<Map<String, String>> handleResponseStatusException(ResponseStatusException ex) {
-        Map<String, String> response = new HashMap<>();
-        response.put("error", ex.getReason());
-        return new ResponseEntity<>(response, ex.getStatusCode());
-    }
-
 
     @GetMapping("/check")
     public ResponseEntity<List<Map<String, String>>> checkEmail() {
@@ -64,4 +53,28 @@ public class EmailController {
                     .body(Collections.singletonList(Collections.singletonMap("error", e.getMessage())));
         }
     }
+
+    @GetMapping("/sent")
+    public ResponseEntity<List<Map<String, String>>> sentEmail() {
+        try {
+            List<Map<String, String>> emails = emailService.sentEmail();
+            return ResponseEntity.ok(emails);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Collections.singletonList(Collections.singletonMap("error", e.getMessage())));
+        }
+    }
+
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<Map<String, String>> handleResponseStatusException(ResponseStatusException ex) {
+        Map<String, String> response = new HashMap<>();
+        response.put("error", ex.getReason());
+        return new ResponseEntity<>(response, ex.getStatusCode());
+    }
+
+
+
+
 }
