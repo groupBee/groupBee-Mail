@@ -4,6 +4,7 @@ import groupbee.email.service.feign.EmployeeFeignClient;
 import jakarta.mail.*;
 import jakarta.mail.internet.AddressException;
 import jakarta.mail.internet.InternetAddress;
+import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
@@ -43,89 +44,85 @@ public class EmailService {
     @Value("${mail.imap.starttls.enable}")
     private boolean imapStarttlsEnable;
 
-    public void sendEmail(List<String> to, List<String> cc, String subject, String body) throws SendFailedException {
+    public void sendEmail(List<String> to, List<String> cc, String subject, String body) throws Exception {
         Map<String, Object> userInfo = employeeFeignClient.getUserInfo();
         String username = userInfo.get("email").toString();
         String password = userInfo.get("password").toString();
 
-        // 수신자 주소 유효성 검사
-        for (String recipient : to) {
-            if (!isValidEmailAddress(recipient)) {
-                throw new SendFailedException("Invalid email address: " + recipient);
-            }
-        }
-
-        for (String recipient : cc) {
-            if (!isValidEmailAddress(recipient)) {
-                throw new SendFailedException("Invalid email address: " + recipient);
-            }
-        }
-
         JavaMailSenderImpl mailSender = new JavaMailSenderImpl();
         mailSender.setHost(mailHost);
         mailSender.setPort(mailPort);
-
         mailSender.setUsername(username);
         mailSender.setPassword(password);
 
         Properties props = mailSender.getJavaMailProperties();
         props.put("mail.transport.protocol", mailProtocol);
         props.put("mail.smtp.auth", "true");
-        props.put("mail.smtp.starttls.enable", String.valueOf(starttlsEnable));  // STARTTLS 활성화
-        props.put("mail.debug", "true");
+        props.put("mail.smtp.starttls.enable", "true"); // TLS 사용
+        props.put("mail.smtp.ssl.trust", "*"); // SSL 검증 비활성화
+        props.put("mail.smtp.ssl.checkserveridentity", "false"); // SSL 검증 비활성화
+//        props.put("mail.debug", "true");
 
-        // SSL 검증 비활성화
-        props.put("mail.smtp.ssl.trust", "*");
-        props.put("mail.smtp.ssl.checkserveridentity", "false");
-
-        SimpleMailMessage message = new SimpleMailMessage();
+        MimeMessage message = mailSender.createMimeMessage();
         message.setFrom(username);
 
-        // 수신자 설정
-        message.setTo(to.toArray(new String[0]));
+        InternetAddress[] recipientAddresses = to.stream()
+                .map(email -> {
+                    try {
+                        return new InternetAddress(email);
+                    } catch (AddressException e) {
+                        throw new RuntimeException("Invalid email address: " + email);
+                    }
+                })
+                .toArray(InternetAddress[]::new);
 
-        // CC가 존재할 경우 추가
+        message.setRecipients(Message.RecipientType.TO, recipientAddresses);
+
         if (cc != null && !cc.isEmpty()) {
-            message.setCc(cc.toArray(new String[0]));
+            InternetAddress[] ccAddresses = cc.stream()
+                    .map(email -> {
+                        try {
+                            return new InternetAddress(email);
+                        } catch (AddressException e) {
+                            throw new RuntimeException("Invalid email address: " + email);
+                        }
+                    })
+                    .toArray(InternetAddress[]::new);
+            message.addRecipients(Message.RecipientType.CC, ccAddresses);
         }
 
-        message.setSubject(subject);
-        message.setText(body);
+        message.setSubject(subject, "UTF-8");  // 제목 인코딩
+        message.setText(body, "UTF-8");  // 본문 인코딩
+
+        message.setSentDate(new Date());
+
 
         try {
             mailSender.send(message);
+            System.out.println("Email sent successfully!");
+            saveSentEmailToIMAP(username, password, message);
         } catch (MailException e) {
-            // 예외를 런타임 예외로 감싸서 던지기
+            System.out.println("Error while sending email: " + e.getMessage());
+            e.printStackTrace();
             throw new RuntimeException("Failed to send email: " + e.getMessage(), e);
+        } catch (Exception ex) {
+            System.out.println("IMAP save failed: " + ex.getMessage());
+            ex.printStackTrace();
+            throw new RuntimeException("Failed to save email to IMAP: " + ex.getMessage(), ex);
         }
+
     }
 
-    private boolean isValidEmailAddress(String email) {
-        boolean result = true;
-        try {
-            InternetAddress emailAddr = new InternetAddress(email);
-            emailAddr.validate();
-        } catch (AddressException ex) {
-            result = false;
-        }
-        return result;
-    }
+//여러 내용들
+    private void saveSentEmailToIMAP(String username, String password, MimeMessage message) throws Exception {
 
-    public List<Map<String, String>> checkEmail() throws Exception {
-        List<Map<String, String>> emailList = new ArrayList<>();
-        Map<String, Object> userInfo = employeeFeignClient.getUserInfo();
-        String username = userInfo.get("email").toString();
-        String password = userInfo.get("password").toString();
         Properties props = new Properties();
         props.put("mail.store.protocol", imapProtocol);
         props.put("mail.imap.host", imapHost);
         props.put("mail.imap.port", String.valueOf(imapPort));
-        props.put("mail.imap.starttls.enable", String.valueOf(imapStarttlsEnable));  // STARTTLS 활성화
+        props.put("mail.imap.starttls.enable", String.valueOf(imapStarttlsEnable));
         props.put("mail.imap.ssl.enable", "false");
-        props.put("mail.smtp.sendpartial", "false");  // 일부 수신자에게만 전송을 방지
         props.put("mail.debug", "true");
-
-        // SSL 검증 비활성화
         props.put("mail.imap.ssl.trust", "*");
         props.put("mail.imap.ssl.checkserveridentity", "false");
 
@@ -133,37 +130,43 @@ public class EmailService {
         Store store = session.getStore(imapProtocol);
         store.connect(imapHost, username, password);
 
-        Folder inbox = store.getFolder("INBOX");
-        inbox.open(Folder.READ_ONLY);
-
-        Message[] messages = inbox.getMessages();
-        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy.M.d HH:mm:ss");
-
-        for (Message message : messages) {
-            Map<String, String> emailData = new HashMap<>();
-            emailData.put("subject", message.getSubject());
-            emailData.put("from", getEmailAddressOnly(message.getFrom()));
-            emailData.put("receivedDate", dateFormat.format(message.getReceivedDate()));  // 날짜 형식 변경
-
-            // 이메일 본문 내용 가져오기
-            String content = "";
-            if (message.isMimeType("text/plain")) {
-                content = message.getContent().toString();
-            } else if (message.isMimeType("multipart/*")) {
-                Multipart multipart = (Multipart) message.getContent();
-                content = getTextFromMultipart(multipart);
-            } else if (message.isMimeType("text/html")) {
-                content = message.getContent().toString();
-            }
-            emailData.put("content", content);
-
-            emailList.add(emailData);
+        Folder sentFolder = store.getFolder("Sent"); // Adjust if different folder name
+        if (!sentFolder.exists()) {
+            sentFolder.create(Folder.HOLDS_MESSAGES);
         }
 
-        inbox.close(false);
-        store.close();
+        sentFolder.open(Folder.READ_WRITE);
+///여기에 파싱한거 하기
 
-        return emailList;
+        System.out.println("1111111111111"+message.getSubject());
+
+        MimeMessage copiedMessage = new MimeMessage(session);
+
+// 기존 메일의 각 필드를 복사
+        copiedMessage.setSubject(message.getSubject());
+        copiedMessage.setText(message.getContent().toString());
+        copiedMessage.setSentDate(message.getSentDate());
+        copiedMessage.setRecipients(Message.RecipientType.TO, message.getRecipients(Message.RecipientType.TO));
+        copiedMessage.setRecipients(Message.RecipientType.CC, message.getRecipients(Message.RecipientType.CC));
+        Address[] fromAddresses = message.getFrom();
+        copiedMessage.setFrom(fromAddresses[0]);
+
+
+        sentFolder.appendMessages(new MimeMessage[]{copiedMessage});
+        sentFolder.close(false);
+
+        store.close();
+    }
+
+
+    private boolean isValidEmailAddress(String email) {
+        try {
+            InternetAddress emailAddr = new InternetAddress(email);
+            emailAddr.validate();
+            return true;
+        } catch (AddressException ex) {
+            return false;
+        }
     }
 
     private String getEmailAddressOnly(Address[] addresses) {
@@ -182,6 +185,127 @@ public class EmailService {
         }
         return result.toString();
     }
+
+    public List<Map<String, String>> checkEmail() throws Exception {
+        List<Map<String, String>> emailList = new ArrayList<>();
+        Map<String, Object> userInfo = employeeFeignClient.getUserInfo();
+        String username = userInfo.get("email").toString();
+        String password = userInfo.get("password").toString();
+
+        Properties props = new Properties();
+        props.put("mail.store.protocol", imapProtocol);
+        props.put("mail.imap.host", imapHost);
+        props.put("mail.imap.port", String.valueOf(imapPort));
+        props.put("mail.imap.starttls.enable", String.valueOf(imapStarttlsEnable));
+        props.put("mail.imap.ssl.enable", "false");
+        props.put("mail.smtp.sendpartial", "false");
+//        props.put("mail.debug", "true");
+        props.put("mail.imap.ssl.trust", "*");
+        props.put("mail.imap.ssl.checkserveridentity", "false");
+
+
+        Session session = Session.getInstance(props);
+        Store store = session.getStore(imapProtocol);
+        store.connect(imapHost, username, password);
+
+        Folder inbox = store.getFolder("INBOX");
+        inbox.open(Folder.READ_ONLY);
+
+        Message[] messages = inbox.getMessages();
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy.M.d HH:mm:ss");
+
+        for (Message message : messages) {
+            Map<String, String> emailData = new HashMap<>();
+            emailData.put("subject", message.getSubject());
+            emailData.put("from", getEmailAddressOnly(message.getFrom()));
+            emailData.put("receivedDate", dateFormat.format(message.getReceivedDate()));
+
+            String content = "";
+            if (message.isMimeType("text/plain")) {
+                content = message.getContent().toString();
+            } else if (message.isMimeType("multipart/*")) {
+                Multipart multipart = (Multipart) message.getContent();
+                content = getTextFromMultipart(multipart);
+            } else if (message.isMimeType("text/html")) {
+                content = message.getContent().toString();
+            }
+            emailData.put("content", content);
+            emailList.add(emailData);
+        }
+
+        inbox.close(false);
+        store.close();
+
+        return emailList;
+    }
+
+    public List<Map<String, String>> sentEmail() throws Exception {
+
+        List<Map<String, String>> emailList = new ArrayList<>();
+        Map<String, Object> userInfo = employeeFeignClient.getUserInfo();
+        String username = userInfo.get("email").toString();
+        String password = userInfo.get("password").toString();
+        Properties props = new Properties();
+
+
+        props.put("mail.store.protocol", imapProtocol);
+        props.put("mail.imap.host", imapHost);
+        props.put("mail.imap.port", String.valueOf(imapPort));
+        props.put("mail.imap.starttls.enable", String.valueOf(imapStarttlsEnable));
+        props.put("mail.imap.ssl.enable", "false");
+        props.put("mail.smtp.sendpartial", "false");
+//        props.put("mail.debug", "true");
+        props.put("mail.imap.ssl.trust", "*");
+        props.put("mail.imap.ssl.checkserveridentity", "false");
+
+
+        Session session = Session.getInstance(props);
+        Store store = session.getStore(imapProtocol);
+        store.connect(imapHost, username, password);
+
+        Folder sentFolder = store.getFolder("Sent");
+
+        sentFolder.open(Folder.READ_WRITE);
+        Message[] messages = sentFolder.getMessages();
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy.MM.dd HH:mm:ss");
+
+        for (Message message : messages) {
+            Map<String, String> emailData = new HashMap<>();
+
+            // 제목 null 체크
+            String subject = message.getSubject();
+            emailData.put("subject", subject);
+
+            // 받는 사람 null 체크
+            String to = getEmailAddressOnly(message.getRecipients(Message.RecipientType.TO));
+            emailData.put("to", to);
+
+            // 날짜 null 체크
+            Date sentDate = message.getSentDate();
+            emailData.put("sentDate", String.valueOf(sentDate));
+
+            emailData.put("cc", getEmailAddressOnly(message.getRecipients(Message.RecipientType.CC)));
+            // 본문 null 체크
+            String content = "";
+            if (message.isMimeType("text/plain")) {
+                content = message.getContent() != null ? message.getContent().toString() : "No Content";
+            } else if (message.isMimeType("multipart/*")) {
+                Multipart multipart = (Multipart) message.getContent();
+                content = getTextFromMultipart(multipart);
+            } else if (message.isMimeType("text/html")) {
+                content = message.getContent() != null ? message.getContent().toString() : "No Content";
+            }
+            emailData.put("content", content);
+
+            emailList.add(emailData);
+        }
+
+        sentFolder.close(false);
+        store.close();
+
+        return emailList;
+    }
+
 
     private String getTextFromMultipart(Multipart multipart) throws Exception {
         StringBuilder result = new StringBuilder();
